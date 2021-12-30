@@ -953,26 +953,12 @@ export class OpenSeaPort {
       accountAddress,
     });
 
-    const _makeAndPostOneSellOrder = async (asset: Asset) => {
-      const order = await this._makeSellOrder({
-        asset,
-        quantity,
-        accountAddress,
-        startAmount,
-        endAmount,
-        listingTime,
-        expirationTime,
-        waitForHighestBid,
-        paymentTokenAddress: paymentTokenAddress || NULL_ADDRESS,
-        extraBountyBasisPoints,
-        buyerAddress: buyerAddress || NULL_ADDRESS,
-      });
-
+    const _createSignedorder = async (order: UnhashedOrder): Promise<Order> => {
       if (buyerEmail) {
         await this._createEmailWhitelistEntry({ order, buyerEmail });
       }
 
-      const hashedOrder = {
+      const hashedOrder: Order = {
         ...order,
         hash: getOrderHash(order),
       };
@@ -986,17 +972,16 @@ export class OpenSeaPort {
         );
       }
 
-      const orderWithSignature = {
+      return {
         ...hashedOrder,
         ...signature,
       };
-
-      return this.validateAndPostOrder(orderWithSignature);
     };
 
     const range = _.range(numberOfOrders * assets.length);
     const batches = _.chunk(range, SELL_ORDER_BATCH_SIZE);
     let numOrdersCreated = 0;
+    const orderWithSignature = await _createSignedorder(dummyOrder);
 
     for (const subRange of batches) {
       // subRange = e.g. [5, 6, 7, 8, 9]
@@ -1005,9 +990,8 @@ export class OpenSeaPort {
       // Will block until all SELL_ORDER_BATCH_SIZE orders
       // have come back in parallel
       const batchOrdersCreated = await Promise.all(
-        subRange.map(async (assetOrderIndex) => {
-          const assetIndex = Math.floor(assetOrderIndex / numberOfOrders);
-          return _makeAndPostOneSellOrder(assets[assetIndex]);
+        subRange.map(async () => {
+          return this.validateAndPostOrder(orderWithSignature);
         })
       );
 
